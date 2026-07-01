@@ -1,0 +1,39 @@
+# Base for LLM inference benchmarking on GH200 (single-node).
+# Spack provides python 3.12 + the CUDA runtime/toolkit; vLLM (and its matching
+# aarch64 CUDA torch wheel) and k6 are layered on top in `post-install`.
+#
+# Multi-node note: for distributed inference across nodes over Slingshot, add a
+#   network:
+#     mpi: cray-mpich@9.0.0 +cuda
+#     specs: [libfabric@2.4.0-dev ..., xpmem@2.9.6 ~kernel-module]
+# block plus `aws-ofi-nccl` / `nccl-tests` to the specs, mirroring the official
+# eth-cscs/alps-uenv pytorch/vX/gh200 recipe. Kept out here to stay minimal.
+inference:
+  compiler: [gcc]
+  unify: true
+  specs:
+  - python@3.12
+  - python-venv
+  - py-pip
+  - cuda
+  - cudnn
+  - nccl
+  - git
+  - curl
+  variants:
+  - +cuda
+  - cuda_arch=90a
+  views:
+    default:
+      link: all
+      uenv:
+        add_compilers: true
+        prefix_paths:
+          LD_LIBRARY_PATH: [lib, lib64]
+        env_vars:
+          set:
+          # pip --user installs land inside the squashfs (store is mounted at
+          # the fixed path /user-environment), so vLLM ships with the image.
+          - PYTHONUSERBASE: "/user-environment/env/default"
+          - CUDA_HOME: "/user-environment/env/default"
+          - CUDA_CACHE_DISABLE: "1"

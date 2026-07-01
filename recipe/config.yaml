@@ -1,0 +1,11 @@
+name: inference-bench
+spack:
+  repo: https://github.com/spack/spack.git
+  commit: v1.2.0
+  packages:
+    repo: https://github.com/spack/spack-packages.git
+    commit: 81199515a6c2b56caa2a303878ad77771d6599b3
+modules: false
+store: /user-environment
+description: LLM inference benchmarking (vllm, k6, python3.12) for Daint GH200
+version: 2
