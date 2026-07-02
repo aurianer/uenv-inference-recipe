@@ -37,3 +37,5 @@ inference:
           - PYTHONUSERBASE: "/user-environment/env/default"
           - CUDA_HOME: "/user-environment/env/default"
           - CUDA_CACHE_DISABLE: "1"
+          # Tokenizers are pre-cached here by post-install; compute nodes read them offline.
+          - HF_HOME: "/user-environment/hf"

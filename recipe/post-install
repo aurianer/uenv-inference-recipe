@@ -3,6 +3,8 @@
 # 1. Layer vLLM[bench] (+ its aarch64 CUDA torch wheel, pandas, datasets) and
 #    matplotlib into the squashfs, so the benchmark's vLLM sweep + plotting work.
 # 2. Install a SHA256-verified k6 (Grafana load-testing) arm64 binary.
+# 3. Pre-cache the served models' tokenizers into the image so compute nodes (no
+#    outbound network on Daint) can tokenize offline (HF_HUB_OFFLINE=1).
 
 set -euo pipefail
 
@@ -34,4 +36,15 @@ curl -fsSL -o "${tmp}/checksums.txt"           "${base}/k6-${K6_VERSION}-checksu
 tar -xzf "${tmp}/${tarball}" -C "${tmp}"
 install -Dm755 "${tmp}/k6-${K6_VERSION}-linux-arm64/k6" "${STORE_VIEW}/bin/k6"
 
-echo "post-install complete: vllm==${VLLM_VERSION}, k6 ${K6_VERSION}"
+# 3. Pre-cache tokenizers into HF_HOME inside the squashfs.
+export HF_HOME="{{ env.mount }}/hf"
+mkdir -p "${HF_HOME}"
+for model in \
+  swiss-ai/Apertus-8B-Instruct-2509 \
+  zai-org/GLM-5.2 \
+  moonshotai/Kimi-K2.7-Code ; do
+  echo "post-install: caching tokenizer ${model}"
+  "${PY}" -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)"
+done
+
+echo "post-install complete: vllm==${VLLM_VERSION}, k6 ${K6_VERSION}, tokenizers cached in ${HF_HOME}"
