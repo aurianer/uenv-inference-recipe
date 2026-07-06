@@ -44,7 +44,13 @@ for model in \
   zai-org/GLM-5.2 \
   moonshotai/Kimi-K2.7-Code ; do
   echo "post-install: caching tokenizer ${model}"
-  "${PY}" -c "from transformers import AutoTokenizer; AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)"
+  # Cache BOTH config.json (AutoConfig) and the tokenizer files. Standard tokenizers
+  # (e.g. Apertus) don't fetch config.json via AutoTokenizer at bake time, but vLLM
+  # loads them with trust_remote_code=False at runtime, which needs config.json -> we
+  # must cache it explicitly or the offline load fails with LocalEntryNotFoundError.
+  "${PY}" -c "from transformers import AutoConfig, AutoTokenizer; \
+AutoConfig.from_pretrained('${model}', trust_remote_code=True); \
+AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)"
 done
 
 echo "post-install complete: vllm==${VLLM_VERSION}, k6 ${K6_VERSION}, tokenizers cached in ${HF_HOME}"
