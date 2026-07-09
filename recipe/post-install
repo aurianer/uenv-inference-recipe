@@ -39,10 +39,21 @@ install -Dm755 "${tmp}/k6-${K6_VERSION}-linux-arm64/k6" "${STORE_VIEW}/bin/k6"
 # 3. Pre-cache tokenizers into HF_HOME inside the squashfs.
 export HF_HOME="{{ env.mount }}/hf"
 mkdir -p "${HF_HOME}"
+# gemma (and some nvidia repos) are GATED on Hugging Face: the download needs an
+# access token with the license accepted. huggingface_hub reads HF_TOKEN from the
+# env automatically -- export it in the build environment (stackinator/uenv build),
+# with an account that has accepted the gemma + Nemotron licenses. Warn early so a
+# missing token fails with a clear message instead of a buried 401/GatedRepoError.
+if [ -z "${HF_TOKEN:-}" ]; then
+  echo "post-install: WARNING HF_TOKEN is unset -- gated repos (google/gemma-*, some" \
+       "nvidia/*) will fail to cache. Export HF_TOKEN with license access before build." >&2
+fi
 for model in \
   swiss-ai/Apertus-8B-Instruct-2509 \
   zai-org/GLM-5.2 \
-  moonshotai/Kimi-K2.7-Code ; do
+  moonshotai/Kimi-K2.7-Code \
+  google/gemma-4-31B-it \
+  nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16 ; do
   echo "post-install: caching tokenizer ${model}"
   # Cache BOTH config.json (AutoConfig) and the tokenizer files. Standard tokenizers
   # (e.g. Apertus) don't fetch config.json via AutoTokenizer at bake time, but vLLM

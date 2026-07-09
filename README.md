@@ -6,7 +6,7 @@ A uenv (CSCS user environment) for LLM **inference benchmarking**:
 - **vLLM** `0.24.0` (+ its matching aarch64 CUDA PyTorch wheel) — pip, layered in `post-install`
 - **k6** `v2.0.0` (Grafana load testing) — SHA256-verified arm64 binary in `post-install`
 
-Target label: `inference-bench/v1@daint%gh200` (Spack `cuda_arch=90a`).
+Target label: `inference-bench/v4@daint%gh200` (Spack `cuda_arch=90a`).
 
 ## Design notes
 
@@ -41,7 +41,7 @@ env --ignore-environment PATH=/usr/bin:/bin:/usr/sbin make store.squashfs
 ## Build via the CSCS CI service (alternative)
 
 ```bash
-uenv build <path>/uenv-inference-recipe/recipe  inference-bench/v1@daint%gh200
+uenv build <path>/uenv-inference-recipe/recipe  inference-bench/v4@daint%gh200
 ```
 
 > ⚠️ The `uenv build` service pushes to the **public `service::` namespace**, and its build sandbox
@@ -50,7 +50,7 @@ uenv build <path>/uenv-inference-recipe/recipe  inference-bench/v1@daint%gh200
 ## Run & verify
 
 ```bash
-uenv start ./store.squashfs        # or: uenv start inference-bench/v1@daint%gh200
+uenv start ./store.squashfs        # or: uenv start inference-bench/v4@daint%gh200
 
 python3 --version                  # -> 3.12.x
 k6 version                         # -> k6 v2.0.0
