@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+#
+# 1. Layer vLLM (built from source for ROCm/gfx942 -- no PyPI ROCm wheel exists) + its ROCm
+#    torch wheel, pandas, datasets, matplotlib into the squashfs.
+# 2. Install a SHA256-verified k6 (Grafana load-testing) amd64 binary.
+# 3. Pre-cache the served models' tokenizers into the image so compute nodes (no outbound
+#    network) can tokenize offline (HF_HUB_OFFLINE=1).
+#
+# Build on an MI300A node: HIP kernels need the GPU present at build time.
+
+set -euo pipefail
+
+VLLM_VERSION="0.24.0"
+K6_VERSION="v2.0.0"
+# ROCm torch wheels; keep the rocm6.x here aligned with hip@ in environments.yaml (6.3.x).
+ROCM_TORCH_INDEX="https://download.pytorch.org/whl/rocm6.3"
+
+STORE_VIEW="{{ env.mount }}/env/default"
+PY="$(spack -C {{ env.config }} location -i python)/bin/python3"
+
+# vLLM (ROCm)
+export PYTHONUSERBASE="${STORE_VIEW}"
+"${PY}" -m pip install --user --no-cache-dir --upgrade pip setuptools wheel
+# normally pulled by vllm[bench]; add explicitly since the ROCm path builds vllm bare
+"${PY}" -m pip install --user --no-cache-dir pandas matplotlib datasets
+"${PY}" -m pip install --user --no-cache-dir --index-url "${ROCM_TORCH_INDEX}" torch torchvision
+PYTORCH_ROCM_ARCH=gfx942 VLLM_TARGET_DEVICE=rocm \
+  "${PY}" -m pip install --user --no-cache-dir --no-build-isolation "vllm==${VLLM_VERSION}"
+
+# k6 (Grafana) - amd64 (x86_64) binary; download + SHA256 verify before installing.
+k6_dir="k6-${K6_VERSION}-linux-amd64"
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp}"' EXIT
+tarball="${k6_dir}.tar.gz"
+base="https://github.com/grafana/k6/releases/download/${K6_VERSION}"
+
+curl -fsSL -o "${tmp}/${tarball}"              "${base}/${tarball}"
+curl -fsSL -o "${tmp}/checksums.txt"           "${base}/k6-${K6_VERSION}-checksums.txt"
+
+# SHA256 verification
+( cd "${tmp}" && grep "  ${tarball}\$" checksums.txt | sha256sum -c - )
+
+tar -xzf "${tmp}/${tarball}" -C "${tmp}"
+install -Dm755 "${tmp}/${k6_dir}/k6" "${STORE_VIEW}/bin/k6"
+
+# 3. Pre-cache tokenizers into HF_HOME inside the squashfs.
+export HF_HOME="{{ env.mount }}/hf"
+mkdir -p "${HF_HOME}"
+if [ -z "${HF_TOKEN:-}" ]; then
+  echo "post-install: WARNING HF_TOKEN is unset -- gated repos (google/gemma-*, some" \
+       "nvidia/*) will fail to cache. Export HF_TOKEN with license access before build." >&2
+fi
+for model in \
+  swiss-ai/Apertus-8B-Instruct-2509 \
+  zai-org/GLM-5.2 \
+  moonshotai/Kimi-K2.7-Code \
+  google/gemma-4-31B-it \
+  nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16 ; do
+  echo "post-install: caching tokenizer ${model}"
+  # Cache BOTH config.json (AutoConfig) and the tokenizer files
+  "${PY}" -c "from transformers import AutoConfig, AutoTokenizer; \
+AutoConfig.from_pretrained('${model}', trust_remote_code=True); \
+AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)"
+done
+
+echo "post-install complete: vllm==${VLLM_VERSION} (rocm/gfx942), k6 ${K6_VERSION} (amd64), tokenizers in ${HF_HOME}"

@@ -1,0 +1,6 @@
+# gcc for the host toolchain, llvm-amdgpu (ROCm clang) for the gfx942 device code.
+# Versions mirror alps-uenv prgenv-gnu/25.7/amdgpu (the proven MI300A ROCm base).
+gcc:
+  version: "13"
+llvm-amdgpu:
+  version: "6.3.3"

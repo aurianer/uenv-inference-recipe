@@ -1,0 +1,13 @@
+name: inference-bench
+# ROCm builds need a spack + spack-packages pair known to build the AMD stack; mirror the
+# eth-cscs/alps-uenv prgenv-gnu/25.7/amdgpu base rather than the gh200 recipe's v1.2.0.
+spack:
+  repo: https://github.com/spack/spack.git
+  commit: releases/v1.0
+  packages:
+    repo: https://github.com/spack/spack-packages.git
+    commit: 1a32c3379c9fa28549c68b7931712d81831304df
+modules: false
+store: /user-environment
+description: LLM inference benchmarking (vllm-rocm, k6, python3.12) for beverin MI300A (gfx942)
+version: 2

@@ -1,0 +1,61 @@
+# Base for LLM inference benchmarking on beverin MI300A (gfx942, single-node).
+# Spack provides python 3.12 + the ROCm/HIP toolchain; vLLM (built from source for ROCm --
+# no PyPI ROCm wheel exists) and k6 (amd64) are layered on top in `post-install`.
+#
+# The ROCm spec set mirrors eth-cscs/alps-uenv prgenv-gnu/25.7/amdgpu (the proven MI300A
+# base). Some rocm-* packages don't build with llvm-amdgpu, hence the `%cxx=gcc` pins.
+# NOTE: per the alps-uenv amdgpu README, this must be built on an MI300A compute node --
+# HIP can't compile without the GPU present.
+inference:
+  compiler: [gcc, llvm-amdgpu]
+  unify: when_possible
+  duplicates:
+    strategy: full
+  specs:
+  - python@3.12
+  - python-venv
+  - py-pip
+  - git
+  - curl
+  # ROCm / HIP toolchain for building vLLM's gfx942 kernels + its runtime math libs
+  - hip@6.3.3 ^mesa@23.3.6
+  - llvm-amdgpu
+  - hipcub
+  - rocprim
+  - rocthrust
+  - rocblas ^py-msgpack %cxx=gcc
+  - rocfft
+  - rocsolver
+  - rocsparse
+  - rocrand
+  - rocm-cmake %cxx=gcc
+  - rocm-core %cxx=gcc
+  - rocminfo
+  - hipblas
+  - hipblaslt
+  - hiprand
+  - hipsparse
+  - hipfft
+  - hipblas-common
+  - rccl
+  variants:
+  - +rocm
+  - amdgpu_target=gfx942
+  - amdgpu_target_sram_ecc=gfx942
+  views:
+    default:
+      link: all
+      exclude: ["llvm"]
+      uenv:
+        add_compilers: true
+        prefix_paths:
+          LD_LIBRARY_PATH: [lib, lib64]
+        env_vars:
+          set:
+          # pip --user installs land inside the squashfs (store mounted at the fixed
+          # path /user-environment), so vLLM ships with the image.
+          - PYTHONUSERBASE: "/user-environment/env/default"
+          - ROCM_PATH: "/user-environment/env/default"
+          - HIP_PATH: "/user-environment/env/default"
+          # Tokenizers are pre-cached here by post-install; compute nodes read them offline.
+          - HF_HOME: "/user-environment/hf"
