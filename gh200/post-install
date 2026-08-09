@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-VLLM_VERSION="0.24.0"
+VLLM_VERSION="0.25.1"
 K6_VERSION="v2.0.0"
 
 STORE_VIEW="{{ env.mount }}/env/default"

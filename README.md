@@ -3,7 +3,7 @@
 A uenv (CSCS user environment) for LLM **inference benchmarking**:
 
 - **Python 3.12** + **CUDA** runtime/toolkit — from Spack (recipe: `recipe/`)
-- **vLLM** `0.24.0` (+ its matching aarch64 CUDA PyTorch wheel) — pip, layered in `post-install`
+- **vLLM** `0.25.1` (+ its matching aarch64 CUDA PyTorch wheel) — pip, layered in `post-install`
 - **k6** `v2.0.0` (Grafana load testing) — SHA256-verified arm64 binary in `post-install`
 
 Target label: `inference-bench/v4@daint%gh200` (Spack `cuda_arch=90a`).
