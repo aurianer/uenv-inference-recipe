@@ -16,10 +16,108 @@ PY="$(spack -C {{ env.config }} location -i python)/bin/python3"
 
 # vLLM
 export PYTHONUSERBASE="${STORE_VIEW}"          # pip --user installs into the store
-"${PY}" -m pip install --user --no-cache-dir --upgrade pip setuptools wheel
+# --ignore-installed: install fresh pip/setuptools/wheel into --user (the store view) WITHOUT
+# uninstalling the Spack-provided ones; upgrading pip in place corrupts the read-only store copy.
+"${PY}" -m pip install --user --no-cache-dir --ignore-installed pip setuptools wheel
 # vllm[bench] pulls pandas + datasets (the benchmark's custom-dataset sweep needs
 # pandas.read_json); matplotlib is needed by the result-plotting step
 "${PY}" -m pip install --user --no-cache-dir "vllm[bench]==${VLLM_VERSION}" pandas matplotlib
+
+# Bake the cached-token parsing into vllm bench (stopgap until the upstream PR lands): stock
+# vllm bench drops usage.prompt_tokens_details.cached_tokens; teach it to sum + report them as
+# total_cached_tokens / prefix_cache_hit_rate. Fails the build if an anchor no longer matches
+# this vLLM, so we never ship an image where the sweep silently reports 0 cached tokens.
+"${PY}" - <<'PATCH_EOF'
+import importlib.util, pathlib, sys
+bench = pathlib.Path(importlib.util.find_spec("vllm").origin).parent / "benchmarks"
+EDITS = [
+    (
+        "lib/endpoint_request_func.py",
+        '    prompt_len: int = 0\n    error: str = ""',
+        '    prompt_len: int = 0\n'
+        '    cached_tokens: int = 0  # cached prompt tokens (prefix cache), from prompt_tokens_details\n'
+        '    error: str = ""',
+    ),
+    (
+        "lib/endpoint_request_func.py",
+        '                            elif usage := data.get("usage"):\n'
+        '                                output.output_tokens = usage.get("completion_tokens")\n'
+        '                                if (pt := usage.get("prompt_tokens")) is not None:\n'
+        '                                    output.prompt_len = pt',
+        '                            elif usage := data.get("usage"):\n'
+        '                                output.output_tokens = usage.get("completion_tokens")\n'
+        '                                if (pt := usage.get("prompt_tokens")) is not None:\n'
+        '                                    output.prompt_len = pt\n'
+        '                                details = usage.get("prompt_tokens_details") or {}\n'
+        '                                output.cached_tokens = details.get("cached_tokens") or 0',
+    ),
+    (
+        "serve.py",
+        '    rtfx: float = 0.0  # Inverse Real-Time Factor for ASR benchmarks',
+        '    rtfx: float = 0.0  # Inverse Real-Time Factor for ASR benchmarks\n'
+        '    total_cached: int = 0  # cached prompt tokens (prefix cache) across all requests',
+    ),
+    (
+        "serve.py",
+        '    total_input = 0\n    completed = 0\n    good_completed = 0',
+        '    total_input = 0\n    total_cached = 0\n    completed = 0\n    good_completed = 0',
+    ),
+    (
+        "serve.py",
+        '            total_input += outputs[i].prompt_len\n            tpot = 0',
+        '            total_input += outputs[i].prompt_len\n'
+        '            total_cached += outputs[i].cached_tokens or 0\n'
+        '            tpot = 0',
+    ),
+    (
+        "serve.py",
+        '        total_input=total_input,\n        total_output=sum(actual_output_lens),',
+        '        total_input=total_input,\n'
+        '        total_cached=total_cached,\n'
+        '        total_output=sum(actual_output_lens),',
+    ),
+    (
+        "serve.py",
+        '    print("{:<40} {:<10}".format("Total input tokens:", metrics.total_input))\n'
+        '    if isinstance(metrics, BenchmarkMetrics) and tokenizer:',
+        '    print("{:<40} {:<10}".format("Total input tokens:", metrics.total_input))\n'
+        '    if isinstance(metrics, BenchmarkMetrics):\n'
+        '        print("{:<40} {:<10}".format("Cached prompt tokens:", metrics.total_cached))\n'
+        '        if metrics.total_input > 0:\n'
+        '            print("{:<40} {:<10.1%}".format(\n'
+        '                "Prefix cache hit rate:", metrics.total_cached / metrics.total_input))\n'
+        '    if isinstance(metrics, BenchmarkMetrics) and tokenizer:',
+    ),
+    (
+        "serve.py",
+        '            "total_input_tokens": metrics.total_input,\n'
+        '            "total_output_tokens": metrics.total_output,',
+        '            "total_input_tokens": metrics.total_input,\n'
+        '            "total_cached_tokens": metrics.total_cached,\n'
+        '            "prefix_cache_hit_rate": (\n'
+        '                metrics.total_cached / metrics.total_input if metrics.total_input else 0.0\n'
+        '            ),\n'
+        '            "total_output_tokens": metrics.total_output,',
+    ),
+]
+missing = []
+for rel, old, new in EDITS:
+    p = bench / rel
+    src = p.read_text()
+    if new in src:
+        continue
+    if old not in src:
+        missing.append(rel)
+        continue
+    p.write_text(src.replace(old, new))
+if missing:
+    sys.exit("post-install: cached-token patch anchors not found in "
+             + ", ".join(sorted(set(missing)))
+             + " -- this vLLM refactored the file; update the patch or bump VLLM_VERSION")
+if "total_cached_tokens" not in (bench / "serve.py").read_text():
+    sys.exit("post-install: cached-token patch verification failed")
+print("post-install: cached-token patch applied under", bench)
+PATCH_EOF
 
 # k6 (Grafana) - download + SHA256 verify before installing
 tmp="$(mktemp -d)"
