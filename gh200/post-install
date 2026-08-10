@@ -143,11 +143,15 @@ mkdir -p "${HF_HOME}"
 # with an account that has accepted the gemma + Nemotron licenses. Warn early so a
 # missing token fails with a clear message instead of a buried 401/GatedRepoError.
 if [ -z "${HF_TOKEN:-}" ]; then
-  echo "post-install: WARNING HF_TOKEN is unset -- gated repos (google/gemma-*, some" \
-       "nvidia/*) will fail to cache. Export HF_TOKEN with license access before build." >&2
+  echo "post-install: WARNING HF_TOKEN is unset -- gated repos (swiss-ai/Apertus-v1.5-*," \
+       "google/gemma-*, some nvidia/*) will fail to cache. Export HF_TOKEN with license" \
+       "access before build." >&2
 fi
+# The -thinking variants have no HF repo of their own; they reuse the base v1.5 tokenizers.
 for model in \
   swiss-ai/Apertus-8B-Instruct-2509 \
+  swiss-ai/Apertus-v1.5-8B \
+  swiss-ai/Apertus-v1.5-70B \
   zai-org/GLM-5.2 \
   moonshotai/Kimi-K2.7-Code \
   google/gemma-4-31B-it \
