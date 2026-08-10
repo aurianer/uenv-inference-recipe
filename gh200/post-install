@@ -170,6 +170,19 @@ snapshot_download('${model}', allow_patterns=[
 ])"
 done
 
+# Bake the compiled custom-tokenizer modules for the trust_remote_code models. snapshot_download
+# only fetches the .py files; transformers compiles them into $HF_HOME/modules on first use, and
+# at runtime that path is read-only inside the squashfs (OSError: Read-only file system ->
+# no results for Kimi). These two architectures are known to transformers, so AutoTokenizer
+# is safe here (unlike Apertus v1.5 above).
+for model in \
+  zai-org/GLM-5.2 \
+  moonshotai/Kimi-K2.7-Code ; do
+  echo "post-install: baking remote-code tokenizer modules for ${model}"
+  "${PY}" -c "from transformers import AutoTokenizer; \
+AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)"
+done
+
 # HF_HOME lives inside the squashfs and the image is published to the public service::
 # namespace, so make sure no credential ships with it (huggingface-cli login would have
 # written one here). Pass HF_TOKEN via the environment instead -- that is never persisted.
