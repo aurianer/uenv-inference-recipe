@@ -137,15 +137,15 @@ install -Dm755 "${tmp}/k6-${K6_VERSION}-linux-arm64/k6" "${STORE_VIEW}/bin/k6"
 # 3. Pre-cache tokenizers into HF_HOME inside the squashfs.
 export HF_HOME="{{ env.mount }}/hf"
 mkdir -p "${HF_HOME}"
-# gemma (and some nvidia repos) are GATED on Hugging Face: the download needs an
-# access token with the license accepted. huggingface_hub reads HF_TOKEN from the
-# env automatically -- export it in the build environment (stackinator/uenv build),
-# with an account that has accepted the gemma + Nemotron licenses. Warn early so a
-# missing token fails with a clear message instead of a buried 401/GatedRepoError.
-if [ -z "${HF_TOKEN:-}" ]; then
-  echo "post-install: WARNING HF_TOKEN is unset -- gated repos (swiss-ai/Apertus-v1.5-*," \
-       "google/gemma-*, some nvidia/*) will fail to cache. Export HF_TOKEN with license" \
-       "access before build." >&2
+
+# swiss-ai/Apertus-v1.5-8B and -70B are GATED on Hugging Face (terms need to be accepted)
+# we use the HF_TOKEN of that account so that downloading apertus 1.5 tokenizers succeed.
+# This token will be revoked after build of the uenv and is unset at the end of this script.
+export HF_TOKEN="REPLACE_ME_THEN_REVOKE"
+
+if [ -z "${HF_TOKEN:-}" ] || [ "${HF_TOKEN}" = "REPLACE_ME_THEN_REVOKE" ]; then
+  echo "post-install: WARNING HF_TOKEN is unset -- the gated repos (swiss-ai/Apertus-v1.5-8B" \
+       "and -70B) will fail to cache. Set HF_TOKEN from an account that accepted their terms." >&2
 fi
 # The -thinking variants have no HF repo of their own; they reuse the base v1.5 tokenizers.
 for model in \
@@ -165,5 +165,11 @@ for model in \
 AutoConfig.from_pretrained('${model}', trust_remote_code=True); \
 AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)"
 done
+
+# HF_HOME lives inside the squashfs and the image is published to the public service::
+# namespace, so make sure no credential ships with it (huggingface-cli login would have
+# written one here). Pass HF_TOKEN via the environment instead -- that is never persisted.
+rm -f "${HF_HOME}/token" "${HF_HOME}/stored_tokens"
+unset HF_TOKEN
 
 echo "post-install complete: vllm==${VLLM_VERSION}, k6 ${K6_VERSION}, tokenizers cached in ${HF_HOME}"
