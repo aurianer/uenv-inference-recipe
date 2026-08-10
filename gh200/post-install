@@ -157,13 +157,17 @@ for model in \
   google/gemma-4-31B-it \
   nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16 ; do
   echo "post-install: caching tokenizer ${model}"
-  # Cache BOTH config.json (AutoConfig) and the tokenizer files. Standard tokenizers
-  # (e.g. Apertus) don't fetch config.json via AutoTokenizer at bake time, but vLLM
-  # loads them with trust_remote_code=False at runtime, which needs config.json -> we
-  # must cache it explicitly or the offline load fails with LocalEntryNotFoundError.
-  "${PY}" -c "from transformers import AutoConfig, AutoTokenizer; \
-AutoConfig.from_pretrained('${model}', trust_remote_code=True); \
-AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)"
+  # Fetch the files straight from the hub instead of via AutoConfig/AutoTokenizer: those
+  # parse the checkpoint and abort on an architecture this transformers doesn't know yet
+  # (Apertus v1.5 is model_type 'apertus1p5'), even though we only need the files on disk.
+  # config.json is included because vLLM loads it at runtime with trust_remote_code=False
+  # (otherwise: LocalEntryNotFoundError); *.py covers the custom tokenizers (GLM, Kimi).
+  "${PY}" -c "
+from huggingface_hub import snapshot_download
+snapshot_download('${model}', allow_patterns=[
+    'config.json', 'generation_config.json', 'tokenizer*', 'special_tokens_map.json',
+    'vocab*', 'merges.txt', '*.model', 'chat_template*', '*.py',
+])"
 done
 
 # HF_HOME lives inside the squashfs and the image is published to the public service::
