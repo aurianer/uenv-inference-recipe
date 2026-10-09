@@ -49,20 +49,45 @@ install -Dm755 "${tmp}/${k6_dir}/k6" "${STORE_VIEW}/bin/k6"
 export HF_HOME="{{ env.mount }}/hf"
 mkdir -p "${HF_HOME}"
 if [ -z "${HF_TOKEN:-}" ]; then
-  echo "post-install: WARNING HF_TOKEN is unset -- gated repos (google/gemma-*, some" \
-       "nvidia/*) will fail to cache. Export HF_TOKEN with license access before build." >&2
+  echo "post-install: WARNING HF_TOKEN is unset -- gated repos (swiss-ai/Apertus-v1.5-*," \
+       "google/gemma-*, some nvidia/*) will fail to cache. Export HF_TOKEN with license" \
+       "access before build." >&2
 fi
+# The -thinking variants have no HF repo of their own; they reuse the base v1.5 tokenizers.
 for model in \
   swiss-ai/Apertus-8B-Instruct-2509 \
+  swiss-ai/Apertus-v1.5-8B \
+  swiss-ai/Apertus-v1.5-70B \
   zai-org/GLM-5.2 \
+  zai-org/GLM-5.3 \
   moonshotai/Kimi-K2.7-Code \
   google/gemma-4-31B-it \
   nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16 ; do
   echo "post-install: caching tokenizer ${model}"
-  # Cache BOTH config.json (AutoConfig) and the tokenizer files
-  "${PY}" -c "from transformers import AutoConfig, AutoTokenizer; \
-AutoConfig.from_pretrained('${model}', trust_remote_code=True); \
+  # Fetch files straight from the hub rather than via AutoConfig/AutoTokenizer: those parse
+  # the checkpoint and abort on an architecture transformers doesn't know (Apertus v1.5 is
+  # model_type 'apertus1p5', absent even from transformers 5.15/main)
+  "${PY}" -c "
+from huggingface_hub import snapshot_download
+snapshot_download('${model}', allow_patterns=[
+    'config.json', 'generation_config.json', 'tokenizer*', 'special_tokens_map.json',
+    'vocab*', 'merges.txt', '*.model', 'chat_template*', '*.py',
+])"
+done
+
+# Bake the compiled custom-tokenizer modules for the trust_remote_code models. snapshot_download
+# only fetches the .py files; transformers compiles them into $HF_HOME/modules on first use, and
+# at runtime that path is read-only inside the squashfs (OSError: Read-only file system ->
+# no results for Kimi). These two architectures are known to transformers, so AutoTokenizer
+# is safe here (unlike Apertus v1.5 above).
+for model in \
+  zai-org/GLM-5.2 \
+  moonshotai/Kimi-K2.7-Code ; do
+  echo "post-install: baking remote-code tokenizer modules for ${model}"
+  "${PY}" -c "from transformers import AutoTokenizer; \
 AutoTokenizer.from_pretrained('${model}', trust_remote_code=True)"
 done
+
+rm -f "${HF_HOME}/token" "${HF_HOME}/stored_tokens"
 
 echo "post-install complete: vllm==${VLLM_VERSION} (rocm/gfx942), k6 ${K6_VERSION} (amd64), tokenizers in ${HF_HOME}"
